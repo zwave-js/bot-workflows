@@ -23,7 +23,12 @@ jobs:
     - name: Create GitHub release
       env:
         GH_TOKEN: ${{ github.token }}
-      run: gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --generate-notes
+      run: |
+        set -euo pipefail
+        flags=()
+        # A pre-release identifier (v1.0.0-rc.1) must not become the "latest" release
+        [[ "$GITHUB_REF_NAME" == *-* ]] && flags+=(--prerelease)
+        gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --generate-notes "${flags[@]}"
 
     - name: Move the floating major tag
       run: |
