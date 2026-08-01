@@ -1,11 +1,73 @@
 # bot-workflows
 
 Single source of truth for the zwave-js organization's AI-powered CI workflows, bot
-scripts, and composite actions.
+scripts, and composite actions. Consumer repos (zwave-js, zwave-js-ui) reference this
+repo instead of vendoring the scripts.
 
-> Under construction. This repository is the target of an in-progress migration that
-> extracts the zwave-js AI CI pipelines into a shared, versioned home. It will be
-> populated in Stage 2 of the migration. Until then, treat its contents as provisional.
+## Layout
 
-Downstream repositories consume these workflows via [`gh aw`](https://github.github.io/gh-aw/)
-(the GitHub Agentic Workflows extension).
+```
+bot-scripts/            Node (CommonJS) scripts, installed with `npm ci --ignore-scripts`
+  index.cjs             Façade: the shared surface consumed by gh-aw workflows
+  config.cjs            Loads/validates the consumer's bot config (see below)
+  answer/               Docs-answer bot (gating, retrieval, rendering, posting)
+  logfile/              Logfile extraction, classification, and feedback comments
+  indexes/              Docs/posts embedding indexes: build, load, cache keys, restore
+  feedback/             Docs-answer feedback collection and tracking issue
+  eval/                 Retrieval eval runners and eval tracking issue
+  lib/                  Shared helpers (GitHub API, comments, logfile text, sanitizing)
+actions/
+  setup-bot/            Installs bot-scripts deps, restores the model cache,
+                        exports BOT_SCRIPTS_DIR
+  restore-bot-index/    Restores a docs/posts index from cache or artifact
+  report-index-status/  Updates the index/eval tracking issue
+.github/workflows/
+  docs-embeddings.yml   Reusable (workflow_call): build + eval the docs index
+  posts-embeddings.yml  Reusable (workflow_call): build + eval the posts index
+  bot-index-selfcheck.yml  Reusable (workflow_call): verify index restorability
+  ci.yml, release.yml   This repo's own CI and release automation
+```
+
+## Consumer contract
+
+- **Setup**: run `zwave-js/bot-workflows/actions/setup-bot@v1` first in any job that
+  runs bot scripts. It installs the runtime dependencies and exports
+  `BOT_SCRIPTS_DIR`; scripts are then invoked as
+  `node "$BOT_SCRIPTS_DIR/<subdir>/<script>.cjs"` or required from
+  `$BOT_SCRIPTS_DIR/index.cjs` (gh-aw workflows use the façade).
+  `restore-bot-index` and `report-index-status` self-locate the scripts and do not
+  need setup-bot.
+- **Index producer naming**: `restore-bot-index`'s artifact fallback looks up runs of
+  the workflow that publishes the index. Reusable-workflow runs are attributed to the
+  caller's filename, so name your embeddings callers `docs-embeddings.yml` /
+  `posts-embeddings.yml`, or pass the actual filename via the action's
+  `producer-workflow` input.
+- **Config**: every consumer repo provides `.github/zwave-js-bot.config.json` in its
+  own checkout — `config.cjs` resolves it via `GITHUB_WORKSPACE`, which reusable
+  workflows point at the caller's checkout. Start from
+  [`config.example.json`](config.example.json); the schema is validated strictly at
+  load time (unknown or missing keys fail the job). The `redirects` and `cache`
+  groups are optional. `evalCases.*File` paths are relative to the consumer checkout.
+- **Reusable workflows**: call with `uses: zwave-js/bot-workflows/.github/workflows/<name>.yml@v1`.
+  They only need `github.token`; consumers own schedules, push path filters, and
+  concurrency groups.
+
+## Development
+
+```sh
+cd bot-scripts
+npm ci --ignore-scripts
+cp ../config.example.json ../.github/zwave-js-bot.config.json  # tests load it
+GITHUB_WORKSPACE=$(git rev-parse --show-toplevel) npx vitest run
+```
+
+vitest is fetched by npx on purpose: keeping it out of package.json keeps the
+runtime install the bot jobs pay for lean.
+
+## Releases
+
+Tag a SemVer release (`vX.Y.Z`); `release.yml` creates the GitHub release with
+generated notes and force-moves the floating major tag (`v1`) to it. Consumers pin
+the floating major. Reusable workflows internally reference sibling actions
+`@v1`, so a consumer pinned to another major still runs `@v1` actions until a
+release bumps those references.

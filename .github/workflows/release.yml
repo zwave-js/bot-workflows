@@ -1,0 +1,33 @@
+name: Release
+
+# Tagging vX.Y.Z publishes a GitHub release and force-moves the floating
+# major tag (e.g. v1) that consumers pin their `uses:` references to.
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v7
+
+    - name: Create GitHub release
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --generate-notes
+
+    - name: Move the floating major tag
+      run: |
+        set -euo pipefail
+        major=${GITHUB_REF_NAME%%.*}
+        git tag -f "$major" "$GITHUB_REF_NAME"
+        git push -f origin "$major"

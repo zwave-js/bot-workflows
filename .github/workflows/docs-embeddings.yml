@@ -1,0 +1,168 @@
+name: Build docs embeddings index
+
+# Builds and caches a semantic search index over the consumer repo's
+# documentation, used by the bot to answer questions in issues and
+# discussions.
+#
+# Reusable: the consumer owns the triggers (nightly cron plus a push
+# filter on its docs and its pin of this repo) and calls this workflow.
+# The default checkout is the consumer repo, so the docs and the
+# .github/zwave-js-bot.config.json read by the scripts are the caller's.
+
+on:
+  workflow_call:
+    inputs:
+      docs-path:
+        description: Directory holding the markdown documentation to index
+        required: false
+        default: docs
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  build-index:
+    runs-on: [ubuntu-latest]
+    timeout-minutes: 15
+    outputs:
+      cache-key: ${{ steps.cachekey.outputs.key }}
+
+    steps:
+    - name: Checkout consumer repo
+      uses: actions/checkout@v7
+
+    # Runs before the cache-hit check because the key derives from script
+    # files that only exist once the action tarball is on disk
+    - name: Setup bot
+      uses: zwave-js/bot-workflows/actions/setup-bot@v1
+      with:
+        save-model-cache: 'true'
+
+    # The version-derived prefix lives in indexCacheKeys.cjs; the exact key is
+    # computed once here and reused by the evaluate job via a job output
+    - name: Compute the cache key
+      id: cachekey
+      env:
+        DOCS_HASH: ${{ hashFiles(format('{0}/**/*.md', inputs.docs-path)) }}
+      run: |
+        set -euo pipefail
+        prefix=$(node -p "require('$BOT_SCRIPTS_DIR/indexes/indexCacheKeys.cjs').DOCS_CACHE_PREFIX")
+        # The embedding pipeline files live outside the workspace, so their
+        # part of the key is hashed by hand instead of with hashFiles()
+        scripts_hash=$(cat \
+          "$BOT_SCRIPTS_DIR/indexes/buildDocsIndex.cjs" \
+          "$BOT_SCRIPTS_DIR/indexes/docsIndex.cjs" \
+          "$BOT_SCRIPTS_DIR/indexes/localEmbeddings.cjs" \
+          "$BOT_SCRIPTS_DIR/package-lock.json" \
+          | sha256sum | cut -d' ' -f1)
+        echo "prefix=$prefix" >> "$GITHUB_OUTPUT"
+        echo "key=${prefix}${DOCS_HASH}-${scripts_hash}" >> "$GITHUB_OUTPUT"
+
+    - name: Restore previous index
+      id: cache
+      uses: actions/cache@v6
+      with:
+        path: .docs-index
+        key: ${{ steps.cachekey.outputs.key }}
+        # Restore an older index so only changed chunks need to be re-embedded
+        restore-keys: |
+          ${{ steps.cachekey.outputs.prefix }}
+
+    - name: Build index
+      # An exact cache hit means the index is already up to date
+      if: steps.cache.outputs.cache-hit != 'true'
+      run: node "$BOT_SCRIPTS_DIR/indexes/buildDocsIndex.cjs" "${{ inputs.docs-path }}" .docs-index/index.json
+
+    # Use artifacts as a fallback for the actions cache getting evicted
+    - name: Upload index artifact
+      uses: actions/upload-artifact@v7
+      with:
+        name: docs-index
+        path: .docs-index
+        retention-days: 30
+        # Include dot directories, including `.docs-index`
+        include-hidden-files: true
+        # The answer bot depends on this artifact existing
+        if-no-files-found: error
+
+  evaluate:
+    needs: build-index
+    runs-on: [ubuntu-latest]
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      issues: write
+
+    steps:
+    - name: Checkout consumer repo
+      uses: actions/checkout@v7
+
+    - name: Restore docs index
+      id: restore-index
+      uses: actions/cache/restore@v6
+      with:
+        path: .docs-index
+        key: ${{ needs.build-index.outputs.cache-key }}
+
+    - name: Fail if docs index is missing
+      if: steps.restore-index.outputs.cache-hit != 'true'
+      run: |
+        echo "::error::Docs index cache miss after build-index - cannot evaluate retrieval quality"
+        exit 1
+
+    - name: Setup bot
+      uses: zwave-js/bot-workflows/actions/setup-bot@v1
+
+    - name: Evaluate retrieval quality
+      id: eval
+      continue-on-error: true
+      run: node "$BOT_SCRIPTS_DIR/eval/evalDocsAnswers.cjs" .docs-index/index.json
+
+    - name: Update tracking issue
+      uses: actions/github-script@v9
+      env:
+        TRACKING_ISSUE_TITLE: "🚨 Docs answer bot retrieval quality regression"
+        EVAL_NAME: docs answer bot
+        EVAL_OUTCOME: ${{ steps.eval.outcome }}
+        EVAL_SUMMARY: ${{ steps.eval.outputs.summary }}
+      with:
+        script: |
+          const updateEvalTrackingIssue = require(`${process.env.BOT_SCRIPTS_DIR}/eval/updateEvalTrackingIssue.cjs`);
+          await updateEvalTrackingIssue({github, context});
+
+  # Learn from reactions to the bot's answers: update the feedback
+  # digest issue and build the suppression list for the answer bot
+  feedback:
+    needs: build-index
+    runs-on: [ubuntu-latest]
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      issues: write
+      discussions: read
+
+    steps:
+    - name: Checkout consumer repo
+      uses: actions/checkout@v7
+
+    - name: Setup bot
+      uses: zwave-js/bot-workflows/actions/setup-bot@v1
+
+    - name: Collect feedback on bot answers
+      env:
+        GITHUB_TOKEN: ${{ github.token }}
+      run: node "$BOT_SCRIPTS_DIR/feedback/collectDocsFeedback.cjs" .docs-feedback/feedback.json .docs-feedback/records.json
+
+    - name: Update feedback digest issue
+      env:
+        GITHUB_TOKEN: ${{ github.token }}
+      run: node "$BOT_SCRIPTS_DIR/feedback/updateDocsFeedbackIssue.cjs" .docs-feedback/records.json
+
+    # A per-run key means every nightly run saves a fresh entry,
+    # the answer bot restores the latest one by prefix
+    - name: Save suppression list for the answer bot
+      uses: actions/cache/save@v6
+      with:
+        path: .docs-feedback/feedback.json
+        key: docs-feedback-v2-${{ github.run_id }}

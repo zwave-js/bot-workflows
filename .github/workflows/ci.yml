@@ -1,0 +1,57 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v7
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v6
+      with:
+        node-version: 22
+        cache: 'npm'
+        cache-dependency-path: bot-scripts/package-lock.json
+
+    - name: Install dependencies
+      working-directory: bot-scripts
+      # --ignore-scripts skips onnxruntime-node's postinstall, which would
+      # download additional (GPU) execution providers
+      run: npm ci --ignore-scripts
+
+    - name: Provide a bot config for the tests
+      # config.cjs loads $GITHUB_WORKSPACE/.github/zwave-js-bot.config.json at
+      # require time; in a consumer that is the caller's checkout, here the
+      # example config stands in
+      run: cp config.example.json .github/zwave-js-bot.config.json
+
+    - name: Run tests
+      working-directory: bot-scripts
+      # vitest is fetched by npx: it is a CI-only tool, and keeping it out
+      # of package.json keeps the runtime install the bot jobs pay for lean
+      run: npx --yes vitest run
+
+  actionlint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v7
+
+    - name: Run actionlint
+      run: |
+        set -euo pipefail
+        bash <(curl -fsSL https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash)
+        ./actionlint -color
