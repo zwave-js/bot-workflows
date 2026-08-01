@@ -10,6 +10,11 @@
       "version": "v0.81.6",
       "sha": "ba6380cc6e5be5d21677bebe04d52fb48e3abec7"
     },
+    "zwave-js/bot-workflows/actions/download-logfile@v1": {
+      "repo": "zwave-js/bot-workflows/actions/download-logfile",
+      "version": "v1",
+      "sha": "d0de475bbe438b313321e0b1a22cbcbc8b3634a9"
+    },
     "zwave-js/bot-workflows/actions/report-index-status@v1": {
       "repo": "zwave-js/bot-workflows/actions/report-index-status",
       "version": "v1",
