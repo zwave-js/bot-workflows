@@ -21,6 +21,13 @@ actions/
                         exports BOT_SCRIPTS_DIR
   restore-bot-index/    Restores a docs/posts index from cache or artifact
   report-index-status/  Updates the index/eval tracking issue
+workflows/
+  answer-from-docs.md        Agentic: answer discussions from the docs index
+  analyze-logfile-auto.md    Agentic: analyze new logfiles posted to discussions
+  analyze-logfile-command.md Agentic: on-demand logfile analysis via bot command
+  classify-issue-repo.md     Agentic: classify whether an issue belongs in the repo
+  shared/                    Frontmatter/prompt components the workflows import
+aw.yml                  gh-aw package manifest listing the agentic workflows
 .github/workflows/
   docs-embeddings.yml   Reusable (workflow_call): build + eval the docs index
   posts-embeddings.yml  Reusable (workflow_call): build + eval the posts index
@@ -52,6 +59,32 @@ actions/
   They only need `github.token`; consumers own schedules, push path filters, and
   concurrency groups.
 
+## Installing the agentic workflows
+
+Install a workflow into a consumer repo with the [gh-aw](https://github.github.com/gh-aw/)
+CLI, pinned to a release tag:
+
+```sh
+gh aw add zwave-js/bot-workflows/answer-from-docs@v1
+gh aw add zwave-js/bot-workflows/analyze-logfile-auto@v1
+gh aw add zwave-js/bot-workflows/analyze-logfile-command@v1
+gh aw add zwave-js/bot-workflows/classify-issue-repo@v1
+```
+
+`gh aw add zwave-js/bot-workflows@v1` installs the whole package (see `aw.yml`).
+Recompile with `gh aw compile` after any change and commit the `.lock.yml` files.
+
+What stays consumer-side:
+
+- **Triggers and pre-activation** (`on:` incl. `on.steps:`), gate `if:`, `permissions`,
+  runner selection, `network`, and `timeout-minutes` live in the installed `.md` file —
+  edit them there after `gh aw add`. Only the engine hardening, safe-output jobs, MCP
+  servers, and prompts come from this repo's `workflows/shared/` imports.
+- **Config file**: `.github/zwave-js-bot.config.json` (see consumer contract above).
+- **Eval cases**: the files `evalCases.*File` points at.
+- **Caller workflows** for the reusable embeddings/selfcheck workflows, plus the
+  `BOT_TOKEN` / `COPILOT_GITHUB_TOKEN` secrets.
+
 ## Development
 
 ```sh
@@ -71,3 +104,9 @@ generated notes and force-moves the floating major tag (`v1`) to it. Consumers p
 the floating major. Reusable workflows internally reference sibling actions
 `@v1`, so a consumer pinned to another major still runs `@v1` actions until a
 release bumps those references.
+
+The agentic workflows in `workflows/` import shared components and actions from this
+repo pinned to `@main` / `@v1`. When cutting a release that changes those shared
+pieces, re-pin the import specs in `workflows/*.md` (and the action refs inside them)
+to the release tag, recompile, and commit before tagging — consumers who `gh aw add`
+at a tag otherwise pull shared content from a moving ref.

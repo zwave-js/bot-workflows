@@ -42,6 +42,37 @@ jobs:
       # of package.json keeps the runtime install the bot jobs pay for lean
       run: npx --yes vitest run
 
+  compile-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v7
+
+    - name: Install gh-aw
+      env:
+        GH_TOKEN: ${{ github.token }}
+      # Pin to the version the locks were generated with. Upgrading it
+      # regenerates all locks, which then land in the same PR.
+      run: gh extension install github/gh-aw --pin v0.81.6
+
+    - name: Recompile workflows
+      env:
+        GH_TOKEN: ${{ github.token }}
+      # The shared imports are absolute (zwave-js/bot-workflows/...@main),
+      # so compilation resolves them against this repo's pushed main branch
+      run: gh aw compile workflows/*.md
+
+    - name: Fail on drift
+      # git add -N stages untracked lock files so missing locks count as drift
+      run: |
+        git add -N workflows
+        if ! git diff --exit-code; then
+          echo "::error::Compiled gh-aw workflows are out of date - run 'gh aw compile workflows/*.md' and commit the result"
+          exit 1
+        fi
+
   actionlint:
     runs-on: ubuntu-latest
     timeout-minutes: 5

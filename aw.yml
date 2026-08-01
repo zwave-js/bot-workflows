@@ -1,0 +1,9 @@
+manifest-version: "1"
+name: bot-workflows
+description: Shared agentic bot workflows for the zwave-js organization (docs answering, Z-Wave logfile analysis, issue classification).
+emoji: "🤖"
+includes:
+  - workflows/answer-from-docs.md
+  - workflows/analyze-logfile-auto.md
+  - workflows/analyze-logfile-command.md
+  - workflows/classify-issue-repo.md

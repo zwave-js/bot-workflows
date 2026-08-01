@@ -25,6 +25,8 @@ module.exports = {
 		),
 	extractLogfileUrlFromDiscussion: (...args) =>
 		require("./logfile/extractLogfileUrlFromDiscussion.cjs")(...args),
+	postClassifyIssueFeedback: (...args) =>
+		require("./classify/post.cjs")(...args),
 	updatePostsIndex: (...args) =>
 		require("./indexes/updatePostsIndex.cjs")(...args),
 	updateEvalTrackingIssue: (...args) =>
