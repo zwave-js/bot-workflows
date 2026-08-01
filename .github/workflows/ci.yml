@@ -57,21 +57,14 @@ jobs:
       # regenerates all locks, which then land in the same PR.
       run: gh extension install github/gh-aw --pin v0.81.6
 
-    - name: Recompile workflows
+    - name: Compile workflows
       env:
         GH_TOKEN: ${{ github.token }}
-      # The shared imports are absolute (zwave-js/bot-workflows/...@main),
-      # so compilation resolves them against this repo's pushed main branch
-      run: gh aw compile workflows/*.md
-
-    - name: Fail on drift
-      # git add -N stages untracked lock files so missing locks count as drift
-      run: |
-        git add -N workflows
-        if ! git diff --exit-code; then
-          echo "::error::Compiled gh-aw workflows are out of date - run 'gh aw compile workflows/*.md' and commit the result"
-          exit 1
-        fi
+      # Locks are consumer artifacts: they bake in the SHA that the @main
+      # imports resolve to, so they can never be stable in this repo. CI only
+      # proves the sources compile; consumers compile their own locks on
+      # gh aw add / gh aw update.
+      run: gh aw compile workflows/*.md --strict
 
   actionlint:
     runs-on: ubuntu-latest
