@@ -153,9 +153,17 @@ runs-on-slim: ubuntu-latest
 
 # The task is: read one JSON file, call one tool. Single digits of
 # turns suffice, and the cap bounds what a prompt injection can burn.
-# Root-level: gh aw compile rejects engine.max-turns without engine.id,
-# and engine.id comes from the hardening import.
-max-turns: 5
+# Declared under engine (with the id restated from the hardening import):
+# a root-level max-turns additionally becomes the firewall's hard run cap,
+# where a retried turn would abort the job mid-run.
+engine:
+  id: copilot
+  max-turns: 5
+
+# Restated from the docs-answer-judge import: the compiler only merges the
+# jobs of an imported safe-outputs block, not its scalar timeout
+safe-outputs:
+  timeout-minutes: 10
 
 imports:
   - zwave-js/bot-workflows/workflows/shared/hardening.md@main

@@ -57,7 +57,12 @@ imports:
 
 # The task is: read one issue, call one tool. Single digits of turns
 # suffice, and the cap bounds what a prompt injection can burn.
-max-turns: 5
+# Declared under engine (with the id restated from the hardening import):
+# a root-level max-turns additionally becomes the firewall's hard run cap,
+# where a retried turn would abort the job mid-run.
+engine:
+  id: copilot
+  max-turns: 5
 
 safe-outputs:
   jobs:

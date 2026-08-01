@@ -13,6 +13,8 @@ permissions:
   discussions: read
   issues: read
 
+engine: copilot
+
 imports:
   - zwave-js/bot-workflows/workflows/shared/hardening.md@main
   - zwave-js/bot-workflows/workflows/shared/zwave-log-analysis.md@main
