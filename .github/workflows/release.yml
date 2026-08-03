@@ -34,5 +34,8 @@ jobs:
       run: |
         set -euo pipefail
         major=${GITHUB_REF_NAME%%.*}
-        git tag -f "$major" "$GITHUB_REF_NAME"
+        # Peel to the commit: an annotated release tag would otherwise make the
+        # major tag point at the tag object, and the consumer repin scripts read
+        # it with `git ls-remote`, which does not dereference
+        git tag -f "$major" "$GITHUB_REF_NAME^{commit}"
         git push -f origin "$major"
