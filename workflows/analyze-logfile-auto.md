@@ -91,7 +91,7 @@ engine: copilot
 
 imports:
   - zwave-js/bot-workflows/workflows/shared/hardening.md@75148e07b701ca92e052212a9b7710864068ef6e
-  - zwave-js/bot-workflows/workflows/shared/zwave-log-analysis.md@75148e07b701ca92e052212a9b7710864068ef6e
+  - zwave-js/bot-workflows/workflows/shared/zwave-log-analysis.md@84a2fbd5f9604b357c8615466c3aaa86fad58d8e
 
 steps:
   - name: Setup bot scripts
