@@ -75,7 +75,9 @@ on:
         posts-age-days: ${{ steps.posts-index.outputs.age-days }}
         docs-source: ${{ steps.docs-index.outputs.source }}
         posts-source: ${{ steps.posts-index.outputs.source }}
-        github-token: ${{ secrets.BOT_TOKEN }}
+        # The job's issues:write grant covers the tracking issue; keep the
+        # org PAT out of a job that also runs third-party npm code
+        github-token: ${{ github.token }}
         # Fires once per new issue or discussion, so an open outage must not
         # collect a comment every time
         quiet: 'true'

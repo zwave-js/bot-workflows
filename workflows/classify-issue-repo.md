@@ -12,6 +12,8 @@ on:
       uses: actions/checkout@v7
       with:
         sparse-checkout: .github
+        # setup-bot runs npm below; leave no ambient credential in .git/config
+        persist-credentials: false
 
     - name: Set up bot scripts
       uses: zwave-js/bot-workflows/actions/setup-bot@v1
@@ -82,6 +84,9 @@ safe-outputs:
           uses: actions/checkout@v7
           with:
             sparse-checkout: .github
+            # setup-bot runs npm and the next step holds BOT_TOKEN; leave no
+            # ambient credential in .git/config
+            persist-credentials: false
 
         - name: Set up bot scripts
           uses: zwave-js/bot-workflows/actions/setup-bot@v1
