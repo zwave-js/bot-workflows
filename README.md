@@ -81,6 +81,11 @@ What stays consumer-side:
   runner selection, `network`, and `timeout-minutes` live in the installed `.md` file —
   edit them there after `gh aw add`. Only the engine hardening, safe-output jobs, MCP
   servers, and prompts come from this repo's `workflows/shared/` imports.
+  `gh aw update` rewrites that frontmatter into canonical form and drops any comments
+  in it, so explain the consumer-side blocks here in `workflows/*.md`, where the
+  comments survive and a fresh `gh aw add` carries them over. Pass
+  `--no-release-bump` when syncing, or the update also rewrites the floating action
+  majors below as exact releases.
 - **Config file**: `.github/zwave-js-bot.config.json` (see consumer contract above).
 - **Eval cases**: the files `evalCases.*File` points at.
 - **Caller workflows** for the reusable embeddings/selfcheck workflows, plus the
