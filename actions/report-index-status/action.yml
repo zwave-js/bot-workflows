@@ -102,7 +102,9 @@ runs:
             printf -- '- The %s index could not be restored, from cache or from artifacts.\n' "$label"
             return
           fi
-          [ "$status" != "fresh" ] || return
+          # return 0 explicitly: a bare return propagates the failed test's
+          # exit code, which set -e turns into a step failure on the healthy path
+          [ "$status" != "fresh" ] || return 0
           if [ "$status" = "unknown" ]; then
             printf -- '- The %s index'"'"'s publication state is unknown - the artifact API could not be queried.\n' "$label"
           elif [ -n "$age" ]; then
