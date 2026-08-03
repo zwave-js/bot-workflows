@@ -43,7 +43,8 @@ aw.yml                  gh-aw package manifest listing the agentic workflows
   `node "$BOT_SCRIPTS_DIR/<subdir>/<script>.cjs"` or required from
   `$BOT_SCRIPTS_DIR/index.cjs` (gh-aw workflows use the façade).
   `restore-bot-index` and `report-index-status` self-locate the scripts and do not
-  need setup-bot.
+  need setup-bot. Leave `save-caches` at its default: only the embeddings builders
+  populate the dependency and model caches, every other job restores them read-only.
 - **Index producer naming**: `restore-bot-index`'s artifact fallback looks up runs of
   the workflow that publishes the index. Reusable-workflow runs are attributed to the
   caller's filename, so name your embeddings callers `docs-embeddings.yml` /

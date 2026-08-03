@@ -37,7 +37,7 @@ jobs:
     - name: Setup bot
       uses: zwave-js/bot-workflows/actions/setup-bot@v1
       with:
-        save-model-cache: 'true'
+        save-caches: 'true'
 
     # The version-derived prefix lives in indexCacheKeys.cjs; the exact key is
     # computed once here and reused by the evaluate job via a job output
