@@ -53,7 +53,7 @@ permissions:
   contents: read
 
 imports:
-  - zwave-js/bot-workflows/workflows/shared/hardening.md@main
+  - zwave-js/bot-workflows/workflows/shared/hardening.md@75148e07b701ca92e052212a9b7710864068ef6e
 
 # The task is: read one issue, call one tool. Single digits of turns
 # suffice, and the cap bounds what a prompt injection can burn.

@@ -105,8 +105,9 @@ the floating major. Reusable workflows internally reference sibling actions
 `@v1`, so a consumer pinned to another major still runs `@v1` actions until a
 release bumps those references.
 
-The agentic workflows in `workflows/` import shared components and actions from this
-repo pinned to `@main` / `@v1`. When cutting a release that changes those shared
-pieces, re-pin the import specs in `workflows/*.md` (and the action refs inside them)
-to the release tag, recompile, and commit before tagging — consumers who `gh aw add`
-at a tag otherwise pull shared content from a moving ref.
+The agentic workflows in `workflows/` import their shared components pinned to a
+commit SHA, so consumer recompiles are byte-reproducible. When a release changes
+anything under `workflows/shared/`, re-pin the import specs in `workflows/*.md` to
+the SHA of the commit that last touched the shared files (a release tag cannot be
+used — it does not exist yet when this repo's own CI compiles), recompile, commit,
+then tag. Action refs inside the workflows stay on the floating `@v1`.

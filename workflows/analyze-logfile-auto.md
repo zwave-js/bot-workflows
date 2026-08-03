@@ -90,8 +90,8 @@ runs-on-slim: ubuntu-latest
 engine: copilot
 
 imports:
-  - zwave-js/bot-workflows/workflows/shared/hardening.md@main
-  - zwave-js/bot-workflows/workflows/shared/zwave-log-analysis.md@main
+  - zwave-js/bot-workflows/workflows/shared/hardening.md@75148e07b701ca92e052212a9b7710864068ef6e
+  - zwave-js/bot-workflows/workflows/shared/zwave-log-analysis.md@75148e07b701ca92e052212a9b7710864068ef6e
 
 steps:
   - name: Setup bot scripts
