@@ -53,6 +53,10 @@ runs:
         # gives the SHA gh-aw pins and the floating v1 the reusable workflows
         # use separate entries that never see each other's writes
         dir="$HOME/.cache/zwave-js-bot/bot-scripts"
+        # Start from an empty directory so a self-hosted runner cannot mix in
+        # scripts a release since renamed or dropped; the cache restore below
+        # brings node_modules back
+        rm -rf "$dir"
         mkdir -p "$dir"
         cp -R "$src/." "$dir/"
         echo "BOT_SCRIPTS_DIR=$dir" >> "$GITHUB_ENV"
