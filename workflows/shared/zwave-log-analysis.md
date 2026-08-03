@@ -209,15 +209,14 @@ searchLogEntries({
 
 # Analysis Reporting
 
-Your final output is a single comment posted on GitHub. When presenting analysis findings:
+Your final output is a single comment posted on GitHub. The user's question comes first — the comment must be organized around answering it, not around everything the log contains:
 
-- Start with a brief executive summary of key findings
-- Present evidence systematically with timestamps and node IDs
-- Explain the significance of patterns or anomalies discovered
-- Provide specific recommendations based on analysis
-- Include relevant data points (RSSI values, timing, error counts, etc.)
-- Use clear headings to organize different aspects of analysis
+- Start by restating the user's question in one line, then answer it as directly as the log allows ("Initialization took 4½ minutes because ..."). If the log cannot answer it, say so explicitly and state what evidence is missing.
+- Present the evidence for THAT answer systematically, with timestamps, node IDs, and relevant data points (RSSI values, timing, error counts, etc.).
+- Provide specific recommendations that address the user's problem.
+- Unrelated issues you noticed (dead nodes, retransmissions, generic instability) go in a short "Other observations" section at the end — a few lines each, only when actionable, never the majority of the comment. When the user's question IS about generic instability, this section moves up and becomes the answer.
+- Use clear headings to organize the comment.
 - Only answer what was asked. Do not include your internal TODO lists or process narration in the comment.
 - End the comment with the line: `_AI can make mistakes. Always check important info._`
 
-Remember: Your goal is to provide thorough, actionable insights about Z-Wave network behavior, communication patterns, and any issues present in the log data.
+Remember: a thorough investigation is the means, not the deliverable. The deliverable is a direct answer to the user's question, backed by evidence from the log.
