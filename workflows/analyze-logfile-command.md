@@ -39,6 +39,14 @@ steps:
         }
         core.setOutput("url", match.groups.url.trim());
         core.setOutput("query", (match.groups.query || "").trim());
+        // The safeoutputs MCP server runs in a container without the GitHub
+        // event context, so add_comment cannot auto-target the triggering
+        // item. Pass the target through to the prompt instead.
+        core.setOutput(
+          "item_number",
+          context.payload.discussion?.number ?? context.payload.issue?.number,
+        );
+        core.setOutput("reply_to_id", context.payload.comment?.node_id ?? "");
 
   - name: Download logfile
     uses: zwave-js/bot-workflows/actions/download-logfile@v1
@@ -70,4 +78,4 @@ If the query is empty, analyze the log file and provide insights about any issue
 
 Load the logfile with the `loadLogFile` tool, then analyze it thoroughly following your analysis instructions to answer the query.
 
-Finally, post your findings as a comment on the issue or discussion using the `add-comment` safe output.
+Finally, post your findings as a comment using the `add_comment` safe output. You MUST pass `item_number: ${{ steps.parse_command.outputs.item_number }}` explicitly — automatic targeting does not work in this workflow. If the following comment node ID is not empty, also pass it as `reply_to_id` so the findings appear as a threaded reply to the command: "${{ steps.parse_command.outputs.reply_to_id }}"
