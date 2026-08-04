@@ -137,4 +137,4 @@ Determine the user's question or problem from the discussion content. If no spec
 
 Load the logfile with the `loadLogFile` tool, then analyze it thoroughly following your analysis instructions to answer the user's question.
 
-Finally, post your findings as a comment on the discussion using the `add-comment` safe output.
+Finally, post your findings as a comment on the discussion using the `add_comment` safe output. You MUST pass `item_number: ${{ github.event.discussion.number }}` explicitly — automatic targeting does not work in this workflow.
