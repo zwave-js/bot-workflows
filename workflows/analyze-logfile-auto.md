@@ -133,7 +133,9 @@ This is the discussion content (sanitized):
 
 "${{ steps.sanitized.outputs.text }}"
 
-Determine the user's question or problem from the discussion content. If no specific question can be identified, analyze the log for any issues, errors, or notable events that could explain the problem described in the discussion.
+Determine what the user wants to know. The discussion follows a support template, so the problem is described in prose spread over sections like "Describe the issue", "Steps to reproduce the behavior" and "Device information". Read all of them. The description of what happens and what the user expected instead is the question to answer, even when the body contains no question mark and nothing phrased as a question. When a node ID is given, the problem is about that node. Screenshots are not available to you, so rely on the surrounding text.
+
+Only when the discussion describes no concrete symptom at all, report the most severe problems you find in the log instead.
 
 Load the logfile with the `loadLogFile` tool, then analyze it thoroughly following your analysis instructions to answer the user's question.
 
