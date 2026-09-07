@@ -4,6 +4,12 @@ Single source of truth for the zwave-js organization's AI-powered CI workflows, 
 scripts, and composite actions. Consumer repos (zwave-js, zwave-js-ui) reference this
 repo instead of vendoring the scripts.
 
+## AI-assisted contributions
+
+Read the [AI policy](AI_POLICY.md) before using AI tools to contribute. AI assistance
+is welcome when you personally review, understand, and can explain every change.
+Autonomous-agent contributions and unreviewed AI communication are prohibited.
+
 ## Layout
 
 ```
