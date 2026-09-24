@@ -161,6 +161,7 @@ runs-on-slim: ubuntu-latest
 engine:
   id: copilot
   max-turns: 5
+model: claude-sonnet-5
 
 # Restated from the docs-answer-judge import: the compiler only merges the
 # jobs of an imported safe-outputs block, not its scalar timeout
