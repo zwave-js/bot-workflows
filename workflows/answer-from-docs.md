@@ -58,29 +58,8 @@ on:
       run: |
         echo "::warning::Only one of the two indexes was restored (docs: $DOCS_FOUND, posts: $POSTS_FOUND) - answers will be degraded"
 
-    # This workflow is triggered by whoever opened the issue or discussion, so
-    # a failed run notifies them, not the maintainers. Route the outage to the
-    # tracking issue instead, and let a later healthy run close it again. The
-    # shared action owns the issue title and the degraded/healthy predicate, so
-    # this reporter and the scheduled self-check cannot disagree and flap it.
-    - name: Report index status
-      if: always()
-      uses: zwave-js/bot-workflows/actions/report-index-status@v1
-      with:
-        docs: ${{ steps.docs-index.outputs.found }}
-        posts: ${{ steps.posts-index.outputs.found }}
-        docs-status: ${{ steps.docs-index.outputs.status }}
-        posts-status: ${{ steps.posts-index.outputs.status }}
-        docs-age-days: ${{ steps.docs-index.outputs.age-days }}
-        posts-age-days: ${{ steps.posts-index.outputs.age-days }}
-        docs-source: ${{ steps.docs-index.outputs.source }}
-        posts-source: ${{ steps.posts-index.outputs.source }}
-        # The job's issues:write grant covers the tracking issue; keep the
-        # org PAT out of a job that also runs third-party npm code
-        github-token: ${{ github.token }}
-        # Fires once per new issue or discussion, so an open outage must not
-        # collect a comment every time
-        quiet: 'true'
+    # The index status is reported by the report_index_status job below,
+    # from the pre-activation outputs declared under jobs.pre-activation
 
     - name: Fail if neither index is available
       # Both the cache entry and the newest unexpired artifact would have to be
@@ -137,9 +116,6 @@ on:
   permissions:
     actions: read
     contents: read
-    # report-index-status maintains the outage tracking issue with the
-    # workflow token
-    issues: write
     discussions: read
 
 # Only run the (expensive) agentic judge when the retrieval pipeline
@@ -178,6 +154,55 @@ steps:
     with:
       name: docs-answer-handoff
       path: /tmp/gh-aw/agent/
+
+jobs:
+  # Hand the index restore results to the report_index_status job
+  pre-activation:
+    outputs:
+      docs_found: ${{ steps.docs-index.outputs.found }}
+      docs_status: ${{ steps.docs-index.outputs.status }}
+      docs_age_days: ${{ steps.docs-index.outputs.age-days }}
+      docs_source: ${{ steps.docs-index.outputs.source }}
+      posts_found: ${{ steps.posts-index.outputs.found }}
+      posts_status: ${{ steps.posts-index.outputs.status }}
+      posts_age_days: ${{ steps.posts-index.outputs.age-days }}
+      posts_source: ${{ steps.posts-index.outputs.source }}
+
+  # This workflow is triggered by whoever opened the issue or discussion, so
+  # a failed run notifies them, not the maintainers. Route the outage to the
+  # tracking issue instead, and let a later healthy run close it again. The
+  # shared action owns the issue title and the degraded/healthy predicate, so
+  # this reporter and the scheduled self-check cannot disagree and flap it.
+  #
+  # The report posts as the bot account like every other bot comment. It runs
+  # in its own job so BOT_TOKEN stays out of the pre-activation job, which
+  # runs npm ci and third-party packages. The action only needs Node
+  # builtins, so this job installs and checks out nothing.
+  report_index_status:
+    # Explicit needs: without it, the job would wait for the activation job,
+    # which is skipped whenever the gate is closed
+    needs: pre_activation
+    # Also after a failed pre-activation, e.g. when no index could be restored
+    if: always()
+    runs-on: ubuntu-latest
+    permissions: {}
+    timeout-minutes: 5
+    steps:
+      - name: Report index status
+        uses: zwave-js/bot-workflows/actions/report-index-status@v1
+        with:
+          docs: ${{ needs.pre_activation.outputs.docs_found }}
+          posts: ${{ needs.pre_activation.outputs.posts_found }}
+          docs-status: ${{ needs.pre_activation.outputs.docs_status }}
+          posts-status: ${{ needs.pre_activation.outputs.posts_status }}
+          docs-age-days: ${{ needs.pre_activation.outputs.docs_age_days }}
+          posts-age-days: ${{ needs.pre_activation.outputs.posts_age_days }}
+          docs-source: ${{ needs.pre_activation.outputs.docs_source }}
+          posts-source: ${{ needs.pre_activation.outputs.posts_source }}
+          github-token: ${{ secrets.BOT_TOKEN }}
+          # Fires once per new issue or discussion, so an open outage must not
+          # collect a comment every time
+          quiet: 'true'
 
 network: {}
 
