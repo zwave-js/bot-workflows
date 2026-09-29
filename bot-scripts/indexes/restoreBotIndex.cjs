@@ -28,10 +28,23 @@ function readIndexFileIsUsable(file) {
 }
 
 /**
- * Picks the newest usable index artifact. Pinned to a non-expired artifact of
- * the expected name, built on the default branch of this repository itself, so
- * neither a fork PR (whose head_branch can also be "master"), an expired entry,
- * nor a foreign-named artifact from the same run can be picked.
+ * Accepts only a non-expired artifact of the expected name, built on the
+ * default branch of this repository itself. A fork PR can also have
+ * head_branch "master", so the repository check is required.
+ * @param {any} artifact
+ * @param {string} branch
+ * @param {string | undefined} artifactName
+ */
+function isTrustedArtifact(artifact, branch, artifactName) {
+	return artifact?.expired === false
+		&& artifact?.name === artifactName
+		&& artifact?.workflow_run?.head_branch === branch
+		&& artifact?.workflow_run?.head_repository_id
+			=== artifact?.workflow_run?.repository_id;
+}
+
+/**
+ * Picks the newest artifact that passes isTrustedArtifact.
  * @param {any[]} artifacts
  * @param {string} branch
  * @param {string | undefined} artifactName
@@ -39,13 +52,7 @@ function readIndexFileIsUsable(file) {
  */
 function selectArtifact(artifacts, branch, artifactName) {
 	return artifacts
-		.filter((a) =>
-			a?.expired === false
-			&& a?.name === artifactName
-			&& a?.workflow_run?.head_branch === branch
-			&& a?.workflow_run?.head_repository_id
-				=== a?.workflow_run?.repository_id
-		)
+		.filter((a) => isTrustedArtifact(a, branch, artifactName))
 		.sort((a, b) =>
 			new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
 		)[0];
@@ -58,14 +65,16 @@ function selectArtifact(artifacts, branch, artifactName) {
  * cache hit, so unchanged content is still healthy - the nightly re-uploads
  * either way.
  * The status distinguishes an outage the API confirmed ('stale') from one it
- * could not rule out ('unknown'), so the tracking issue can word it honestly;
- * consumers treat anything other than 'fresh' as unhealthy, so a genuine
- * outage still opens the issue.
- * @param {{artifactCreated?: string, searched: boolean, maxAgeDays: number, now?: number}} param
+ * could not confirm ('unknown'). The artifact listings intermittently omit
+ * recent runs, so a stale or missing result only counts as 'stale' once
+ * repeated listings agreed on it.
+ * @param {{artifactCreated?: string, confirmed: boolean, maxAgeDays: number, now?: number}} param
  * @returns {{status: "fresh" | "stale" | "unknown", ageDays: string, warning?: string}}
  */
-function computeStaleness({ artifactCreated, searched, maxAgeDays, now }) {
+function computeStaleness({ artifactCreated, confirmed, maxAgeDays, now }) {
 	const nowMs = now ?? Date.now();
+	const unconfirmed =
+		"the artifact listings failed or disagreed, so the publication state is unknown";
 	if (artifactCreated) {
 		const createdMs = new Date(artifactCreated).getTime();
 		if (Number.isNaN(createdMs)) {
@@ -77,20 +86,27 @@ function computeStaleness({ artifactCreated, searched, maxAgeDays, now }) {
 			};
 		}
 		const ageDays = Math.floor((nowMs - createdMs) / MS_PER_DAY);
-		if (ageDays >= maxAgeDays) {
+		if (ageDays < maxAgeDays) {
+			return { status: "fresh", ageDays: String(ageDays) };
+		}
+		if (!confirmed) {
 			return {
-				status: "stale",
+				status: "unknown",
 				ageDays: String(ageDays),
 				warning:
-					`The newest index artifact is ${ageDays} day(s) old (limit ${maxAgeDays}) - the nightly rebuild may be failing`,
+					`The newest index artifact found is ${ageDays} day(s) old, but ${unconfirmed}`,
 			};
 		}
-		return { status: "fresh", ageDays: String(ageDays) };
+		return {
+			status: "stale",
+			ageDays: String(ageDays),
+			warning:
+				`The newest index artifact is ${ageDays} day(s) old (limit ${maxAgeDays}) - the nightly rebuild may be failing`,
+		};
 	}
-	if (searched) {
-		// The API answered and there is nothing published: an outage, not a gap
-		// in our knowledge. Only reachable on a cache hit, since a miss with no
-		// artifact cannot produce an index at all.
+	if (confirmed) {
+		// Only reachable on a cache hit, since a miss with no artifact cannot
+		// produce an index at all
 		return {
 			status: "stale",
 			ageDays: "",
@@ -101,8 +117,7 @@ function computeStaleness({ artifactCreated, searched, maxAgeDays, now }) {
 	return {
 		status: "unknown",
 		ageDays: "",
-		warning:
-			"Could not reach the artifacts API - publication state unknown",
+		warning: `No index artifact found, but ${unconfirmed}`,
 	};
 }
 
@@ -126,21 +141,245 @@ function checkCachedIndex({ core }) {
 // gaps without an unbounded walk
 const MAX_PRODUCER_RUNS = 10;
 
+// Delay before each cross-check attempt. The runs listing intermittently omits
+// recent runs or their artifacts, so a single answer does not prove an outage.
+const CROSS_CHECK_DELAYS_MS = [0, 5_000, 15_000];
+
+// A missing or stale result counts as confirmed once this many cross-check
+// attempts answered with the same runs and artifacts
+const MIN_AGREEING_ATTEMPTS = 2;
+
+// Each repo-wide artifact costs one extra request to verify its producing run
+const MAX_VERIFIED_ARTIFACTS = 5;
+
+/** @param {number} ms */
+const defaultSleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
+ * @param {any} responseOrError
+ * @returns {string}
+ */
+function requestIdOf(responseOrError) {
+	return responseOrError?.headers?.["x-github-request-id"]
+		?? responseOrError?.response?.headers?.["x-github-request-id"]
+		?? "unknown";
+}
+
+/** @param {any} error */
+function describeError(error) {
+	const status = error?.status ? `HTTP ${error.status}: ` : "";
+	return `${status}${error?.message ?? error} [request ${
+		requestIdOf(error)
+	}]`;
+}
+
+/**
+ * @param {string} created
+ * @param {number} maxAgeDays
+ * @param {number} now
+ */
+function isFresh(created, maxAgeDays, now) {
+	const createdMs = new Date(created).getTime();
+	return !Number.isNaN(createdMs)
+		&& Math.floor((now - createdMs) / MS_PER_DAY) < maxAgeDays;
+}
+
+/**
+ * @typedef {{runId: number, artifactId: number, created: string}} Candidate
+ */
+
+/**
+ * @param {Candidate | undefined} a
+ * @param {Candidate | undefined} b
+ * @returns {Candidate | undefined}
+ */
+function newerCandidate(a, b) {
+	if (!a) return b;
+	if (!b) return a;
+	return new Date(b.created).getTime() > new Date(a.created).getTime()
+		? b
+		: a;
+}
+
+/**
+ * Lists successful producer runs on the default branch, newest first. A fork
+ * run never satisfies both branch and success here.
+ * @param {{github: any, owner: string, repo: string, producerWorkflow: string, branch: string, created?: string}} param
+ * @returns {Promise<any[]>}
+ */
+async function listProducerRuns(
+	{ github, owner, repo, producerWorkflow, branch, created },
+) {
+	const response = await github.rest.actions.listWorkflowRuns({
+		owner,
+		repo,
+		workflow_id: producerWorkflow,
+		branch,
+		status: "success",
+		per_page: MAX_PRODUCER_RUNS,
+		...(created && { created }),
+	});
+	const runs = response.data?.workflow_runs ?? [];
+	console.log(
+		`Listed ${runs.length} successful ${producerWorkflow} run(s) on ${branch}${
+			created ? ` created ${created}` : ""
+		}: ${
+			runs.map((r) => `${r.id} (${r.created_at})`).join(", ") || "none"
+		} [request ${requestIdOf(response)}]`,
+	);
+	return runs;
+}
+
+/**
+ * Returns the trusted artifact of the newest run that has one.
+ * @param {{github: any, owner: string, repo: string, runs: any[], branch: string, name: string | undefined}} param
+ * @returns {Promise<Candidate | undefined>}
+ */
+async function firstUsableArtifact({ github, owner, repo, runs, branch, name }) {
+	for (const run of runs) {
+		const response = await github.rest.actions.listWorkflowRunArtifacts({
+			owner,
+			repo,
+			run_id: run.id,
+			per_page: 100,
+		});
+		const artifact = selectArtifact(
+			response.data?.artifacts ?? [],
+			branch,
+			name,
+		);
+		console.log(
+			`  Run ${run.id}: ${
+				artifact
+					? `artifact ${artifact.id} uploaded ${artifact.created_at}`
+					: "no usable artifact"
+			} [request ${requestIdOf(response)}]`,
+		);
+		if (artifact) {
+			return {
+				runId: artifact.workflow_run?.id ?? run.id,
+				artifactId: artifact.id,
+				created: artifact.created_at ?? "",
+			};
+		}
+	}
+}
+
+/**
+ * One cross-check attempt against two listings: the producer's runs created
+ * since `since`, and the repo-wide artifacts of this name. Repo-wide artifacts
+ * carry no workflow, so each one is verified against its run before use.
+ * @param {{github: any, owner: string, repo: string, producerWorkflow: string, producerId: number, branch: string, name: string, since: string}} param
+ * @returns {Promise<{best: Candidate | undefined, signature: string}>}
+ */
+async function crossCheck(
+	{ github, owner, repo, producerWorkflow, producerId, branch, name, since },
+) {
+	const sinceMs = new Date(since).getTime();
+	const runs = await listProducerRuns({
+		github,
+		owner,
+		repo,
+		producerWorkflow,
+		branch,
+		created: `>=${since}`,
+	});
+	let best = await firstUsableArtifact({
+		github,
+		owner,
+		repo,
+		runs,
+		branch,
+		name,
+	});
+
+	const listing = await github.rest.actions.listArtifactsForRepo({
+		owner,
+		repo,
+		name,
+		per_page: 100,
+	});
+	const recent = (listing.data?.artifacts ?? [])
+		.filter((a) =>
+			isTrustedArtifact(a, branch, name)
+			&& new Date(a.created_at).getTime() >= sinceMs
+		)
+		.sort((a, b) =>
+			new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+		)
+		.slice(0, MAX_VERIFIED_ARTIFACTS);
+	console.log(
+		`Repo-wide listing has ${recent.length} recent trusted ${name} artifact(s): ${
+			recent.map((a) => `${a.id} from run ${a.workflow_run.id} (${a.created_at})`)
+				.join(", ") || "none"
+		} [request ${requestIdOf(listing)}]`,
+	);
+
+	const verified = [];
+	for (const artifact of recent) {
+		const response = await github.rest.actions.getWorkflowRun({
+			owner,
+			repo,
+			run_id: artifact.workflow_run.id,
+		});
+		const run = response.data;
+		const trusted = run?.workflow_id === producerId
+			&& run?.conclusion === "success"
+			&& run?.head_branch === branch
+			&& run?.head_repository?.id === run?.repository?.id;
+		console.log(
+			`  Run ${artifact.workflow_run.id}: ${
+				trusted
+					? "verified"
+					: `rejected (workflow ${run?.workflow_id}, conclusion ${run?.conclusion}, branch ${run?.head_branch})`
+			} [request ${requestIdOf(response)}]`,
+		);
+		if (!trusted) continue;
+		verified.push(artifact.id);
+		best = newerCandidate(best, {
+			runId: artifact.workflow_run.id,
+			artifactId: artifact.id,
+			created: artifact.created_at,
+		});
+		// Listed newest first, so the first verified artifact is the newest
+		break;
+	}
+
+	const signature = JSON.stringify({
+		runs: runs.map((r) => r.id).sort(),
+		artifacts: verified,
+		best: best?.artifactId ?? null,
+	});
+	return { best, signature };
+}
+
 /**
  * github-script step: finds the newest usable index artifact. Pinned to the
  * workflow file that produces it, so no other workflow with actions:write can
- * publish an artifact of the same name that the bot would then load. A lookup
- * failure degrades to "no index" for the caller to handle via continue-on-error,
- * it must not take down a job triggered by someone opening an issue.
- * @param {{github: any, context: any, core: any}} param
+ * publish an artifact of the same name that the bot would then load. When the
+ * first listing yields nothing fresh, repeated cross-checks decide whether the
+ * pipeline really stopped publishing. The `confirmed` output is "true" only
+ * when the result is fresh or the cross-checks agreed. A lookup failure
+ * degrades to "no index" for the caller to handle via continue-on-error. It
+ * must not take down a job triggered by someone opening an issue.
+ * @param {{github: any, context: any, core: any, sleep?: (ms: number) => Promise<unknown>, now?: number}} param
  */
-async function findIndexArtifact({ github, context, core }) {
+async function findIndexArtifact(
+	{ github, context, core, sleep = defaultSleep, now = Date.now() },
+) {
 	const { owner, repo } = context.repo;
-	const name = process.env.ARTIFACT;
+	const name = /** @type {string} */ (process.env.ARTIFACT);
 	const producerWorkflow = process.env.PRODUCER_WORKFLOW;
+	const maxAgeDays = Number(process.env.MAX_AGE_DAYS);
 	if (!producerWorkflow) {
 		core.setFailed(
 			"PRODUCER_WORKFLOW is not set - refusing to select an artifact",
+		);
+		return;
+	}
+	if (!(maxAgeDays > 0)) {
+		core.setFailed(
+			`MAX_AGE_DAYS must be a positive number, got '${process.env.MAX_AGE_DAYS}'`,
 		);
 		return;
 	}
@@ -160,46 +399,96 @@ async function findIndexArtifact({ github, context, core }) {
 		return;
 	}
 
-	// Successful runs of the producing workflow on the default branch - a fork
-	// run never satisfies both branch and success here. The API returns runs
-	// newest-first, so one page of MAX_PRODUCER_RUNS is the whole scan window.
-	const { data: { workflow_runs: runs } } = await github.rest.actions
-		.listWorkflowRuns({
+	/** @type {Candidate | undefined} */
+	let best;
+	try {
+		const runs = await listProducerRuns({
+			github,
 			owner,
 			repo,
-			workflow_id: producerWorkflow,
+			producerWorkflow,
 			branch,
-			status: "success",
-			per_page: MAX_PRODUCER_RUNS,
 		});
-
-	// Reaching here at all means the API answered, which is what separates
-	// "nothing published" (an outage) from "could not ask" (unknown)
-	core.setOutput("searched", "true");
-
-	for (const run of runs) {
-		const artifacts = await github.paginate(
-			github.rest.actions.listWorkflowRunArtifacts,
-			{ owner, repo, run_id: run.id, per_page: 100 },
-		);
-		const newest = selectArtifact(artifacts, branch, name);
-		if (!newest) continue;
-
-		const id = newest.workflow_run?.id ?? run.id;
-		const created = newest.created_at ?? "";
-		console.log(
-			`Newest usable ${name} artifact comes from run ${id}, uploaded ${
-				created || "unknown"
-			}`,
-		);
-		core.setOutput("id", String(id));
-		core.setOutput("created", String(created));
-		return;
+		best = await firstUsableArtifact({
+			github,
+			owner,
+			repo,
+			runs,
+			branch,
+			name,
+		});
+	} catch (error) {
+		core.warning(`Listing ${producerWorkflow} runs failed: ${describeError(error)}`);
 	}
 
+	let confirmed = true;
+	if (!best || !isFresh(best.created, maxAgeDays, now)) {
+		console.log(
+			best
+				? `Newest artifact from the first listing was uploaded ${best.created} - cross-checking`
+				: "The first listing found no usable artifact - cross-checking",
+		);
+		const since = new Date(now - (maxAgeDays + 1) * MS_PER_DAY)
+			.toISOString()
+			.replace(/\.\d{3}Z$/, "Z");
+		/** @type {number | undefined} */
+		let producerId;
+		const signatures = [];
+		for (const [attempt, delay] of CROSS_CHECK_DELAYS_MS.entries()) {
+			if (delay) await sleep(delay);
+			try {
+				producerId ??= (await github.rest.actions.getWorkflow({
+					owner,
+					repo,
+					workflow_id: producerWorkflow,
+				})).data.id;
+				const result = await crossCheck({
+					github,
+					owner,
+					repo,
+					producerWorkflow,
+					producerId: /** @type {number} */ (producerId),
+					branch,
+					name,
+					since,
+				});
+				best = newerCandidate(best, result.best);
+				if (best && isFresh(best.created, maxAgeDays, now)) break;
+				signatures.push(result.signature);
+			} catch (error) {
+				core.warning(
+					`Cross-check attempt ${attempt + 1} failed: ${describeError(error)}`,
+				);
+			}
+		}
+
+		const fresh = !!best && isFresh(best.created, maxAgeDays, now);
+		const agreed = signatures.length >= MIN_AGREEING_ATTEMPTS
+			&& signatures.every((s) => s === signatures[0]);
+		confirmed = fresh || agreed;
+		if (!confirmed) {
+			console.log(
+				`Could not confirm the publication state: ${signatures.length} of ${CROSS_CHECK_DELAYS_MS.length} cross-check attempt(s) answered, ${
+					new Set(signatures).size
+				} distinct answer(s)`,
+			);
+		}
+	}
+
+	core.setOutput("confirmed", String(confirmed));
+	if (!best) {
+		console.log(
+			`No unexpired ${name} artifact from ${producerWorkflow} on ${branch}`,
+		);
+		return;
+	}
 	console.log(
-		`No unexpired ${name} artifact from ${producerWorkflow} on ${branch}`,
+		`Newest usable ${name} artifact is ${best.artifactId} from run ${best.runId}, uploaded ${
+			best.created || "unknown"
+		}`,
 	);
+	core.setOutput("id", String(best.runId));
+	core.setOutput("created", String(best.created));
 }
 
 /**
@@ -213,7 +502,7 @@ function reportRestore({ core }) {
 	const fromCache = process.env.FROM_CACHE === "true";
 	const artifactRun = process.env.ARTIFACT_RUN;
 	const artifactCreated = process.env.ARTIFACT_CREATED || undefined;
-	const searched = process.env.SEARCHED === "true";
+	const confirmed = process.env.CONFIRMED === "true";
 	const lookup = process.env.LOOKUP || "skipped";
 	const download = process.env.DOWNLOAD || "skipped";
 	const maxAgeDays = Number(process.env.MAX_AGE_DAYS);
@@ -243,7 +532,7 @@ function reportRestore({ core }) {
 
 	const { status, ageDays, warning } = computeStaleness({
 		artifactCreated,
-		searched,
+		confirmed,
 		maxAgeDays,
 	});
 	if (artifactCreated && ageDays !== "") {

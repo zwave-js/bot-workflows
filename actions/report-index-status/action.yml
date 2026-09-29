@@ -62,6 +62,11 @@ outputs:
   healthy:
     description: '"true" when both indexes are present and freshly published'
     value: ${{ steps.assess.outputs.healthy }}
+  conclusive:
+    description: >-
+      '"false" when the only problem is an unknown publication state. The
+      tracking issue is left unchanged in that case.'
+    value: ${{ steps.assess.outputs.conclusive }}
 
 runs:
   using: composite
@@ -94,41 +99,57 @@ runs:
       run: |
         set -euo pipefail
 
-        # Word the problem line for one index, distinguishing a confirmed
-        # outage from a state the API could not be queried for
-        index_problem() {
+        # Word the problem line for one index. A missing or stale index is a
+        # confirmed problem. An unknown publication state is only uncertain.
+        confirmed_problem() {
           local label="$1" found="$2" status="$3" age="$4"
           if [ "$found" != "true" ]; then
             printf -- '- The %s index could not be restored, from cache or from artifacts.\n' "$label"
-            return
-          fi
-          # return 0 explicitly: a bare return propagates the failed test's
-          # exit code, which set -e turns into a step failure on the healthy path
-          [ "$status" != "fresh" ] || return 0
-          if [ "$status" = "unknown" ]; then
-            printf -- '- The %s index'"'"'s publication state is unknown - the artifact API could not be queried.\n' "$label"
-          elif [ -n "$age" ]; then
+          elif [ "$status" = "stale" ] && [ -n "$age" ]; then
             printf -- '- The %s index is being served from a pipeline that last published %s day(s) ago.\n' "$label" "$age"
-          else
+          elif [ "$status" = "stale" ]; then
             printf -- '- The %s index is being served from a pipeline that has not published recently.\n' "$label"
           fi
         }
+        uncertain_problem() {
+          local label="$1" found="$2" status="$3"
+          if [ "$found" = "true" ] && [ "$status" = "unknown" ]; then
+            printf -- '- The %s index'"'"'s publication state is unknown - the artifact listings failed or disagreed.\n' "$label"
+          fi
+        }
 
-        problems=""
-        problems="${problems}$(index_problem docs "$DOCS" "$DOCS_STATUS" "$DOCS_AGE")"
-        problems="${problems}$(index_problem posts "$POSTS" "$POSTS_STATUS" "$POSTS_AGE")"
+        # One substitution per kind, because each one strips its trailing newline
+        confirmed="$(
+          confirmed_problem docs "$DOCS" "$DOCS_STATUS" "$DOCS_AGE"
+          confirmed_problem posts "$POSTS" "$POSTS_STATUS" "$POSTS_AGE"
+        )"
+        uncertain="$(
+          uncertain_problem docs "$DOCS" "$DOCS_STATUS"
+          uncertain_problem posts "$POSTS" "$POSTS_STATUS"
+        )"
 
-        if [ -z "$problems" ]; then
-          echo "healthy=true" >> "$GITHUB_OUTPUT"
-        else
+        if [ -n "$confirmed" ]; then
           echo "healthy=false" >> "$GITHUB_OUTPUT"
+          echo "conclusive=true" >> "$GITHUB_OUTPUT"
           {
             echo 'body<<TRACKING_EOF'
             printf 'The answer bot'"'"'s search index is degraded:\n\n'
-            printf '%s\n' "$problems"
+            printf '%s\n' "$confirmed"
+            [ -z "$uncertain" ] || printf '%s\n' "$uncertain"
             printf '\nCheck that `docs-embeddings.yml` and `posts-embeddings.yml` are still succeeding and still uploading their `docs-index` / `posts-index` artifacts.\n'
             echo 'TRACKING_EOF'
           } >> "$GITHUB_OUTPUT"
+        elif [ -n "$uncertain" ]; then
+          # The tracking issue stays as it is. Opening or closing it on an
+          # inconclusive lookup is what made it flip between states.
+          echo "healthy=false" >> "$GITHUB_OUTPUT"
+          echo "conclusive=false" >> "$GITHUB_OUTPUT"
+          while IFS= read -r line; do
+            echo "::warning::Leaving the tracking issue unchanged: ${line#- }"
+          done <<< "$uncertain"
+        else
+          echo "healthy=true" >> "$GITHUB_OUTPUT"
+          echo "conclusive=true" >> "$GITHUB_OUTPUT"
         fi
 
         # A run-level summary a maintainer sees without expanding step logs
@@ -137,15 +158,16 @@ runs:
         {
           echo '### Answer bot index status'
           echo ''
-          echo '| Index | Restored | Source | Age |'
-          echo '| --- | --- | --- | --- |'
-          echo "| docs | $(restored "$DOCS") | ${DOCS_SOURCE:-unknown} | $(age_cell "$DOCS_AGE") |"
-          echo "| posts | $(restored "$POSTS") | ${POSTS_SOURCE:-unknown} | $(age_cell "$POSTS_AGE") |"
+          echo '| Index | Restored | Source | Publication | Age |'
+          echo '| --- | --- | --- | --- | --- |'
+          echo "| docs | $(restored "$DOCS") | ${DOCS_SOURCE:-unknown} | ${DOCS_STATUS:-unknown} | $(age_cell "$DOCS_AGE") |"
+          echo "| posts | $(restored "$POSTS") | ${POSTS_SOURCE:-unknown} | ${POSTS_STATUS:-unknown} | $(age_cell "$POSTS_AGE") |"
         } >> "$GITHUB_STEP_SUMMARY"
 
     # Reporting a problem must never be what breaks the run
     - name: Update the tracking issue
       id: track
+      if: steps.assess.outputs.conclusive == 'true'
       continue-on-error: true
       uses: actions/github-script@v9
       env:
