@@ -197,9 +197,12 @@ function isFresh(created, maxAgeDays, now) {
 function newerCandidate(a, b) {
 	if (!a) return b;
 	if (!b) return a;
-	return new Date(b.created).getTime() > new Date(a.created).getTime()
-		? b
-		: a;
+	const aMs = new Date(a.created).getTime();
+	const bMs = new Date(b.created).getTime();
+	// Prefer a readable timestamp, because NaN loses every comparison
+	if (Number.isNaN(aMs)) return b;
+	if (Number.isNaN(bMs)) return a;
+	return bMs > aMs ? b : a;
 }
 
 /**
@@ -380,7 +383,7 @@ async function findIndexArtifact(
 		);
 		return;
 	}
-	if (!(maxAgeDays > 0)) {
+	if (!Number.isFinite(maxAgeDays) || maxAgeDays <= 0) {
 		core.setFailed(
 			`MAX_AGE_DAYS must be a positive number, got '${process.env.MAX_AGE_DAYS}'`,
 		);

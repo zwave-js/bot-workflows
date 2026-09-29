@@ -520,11 +520,28 @@ describe("restoreBotIndex", () => {
 			expect(logged).toMatch(/workflow ID 555 \[request workflow-\d+\]/);
 		});
 
-		it("refuses to run without a valid age limit", async () => {
-			process.env.MAX_AGE_DAYS = "";
-			const { core, outputs } = await find(fakeGithub());
-			expect(core.setFailed).toHaveBeenCalled();
-			expect(outputs).toEqual({});
+		it.each(["", "0", "-1", "Infinity", "abc"])(
+			"refuses to run with the age limit '%s'",
+			async (value) => {
+				process.env.MAX_AGE_DAYS = value;
+				const { core, outputs } = await find(fakeGithub());
+				expect(core.setFailed).toHaveBeenCalled();
+				expect(outputs).toEqual({});
+			},
+		);
+
+		it("replaces an artifact with an unreadable timestamp", async () => {
+			const github = fakeGithub({
+				primary: [[run(2, 0)]],
+				timeBounded: [[run(3, 1)]],
+				runArtifacts: {
+					2: [[artifact(21, 2, 0, { created_at: "not a date" })]],
+					3: [[artifact(31, 3, 1)]],
+				},
+			});
+			const { outputs } = await find(github);
+			expect(outputs.id).toBe("3");
+			expect(outputs.confirmed).toBe("true");
 		});
 	});
 });
