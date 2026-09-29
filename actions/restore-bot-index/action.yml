@@ -48,11 +48,11 @@ outputs:
     value: ${{ steps.report.outputs.age-days }}
   status:
     description: >-
-      '"fresh", "stale" (the API confirmed no recent publication) or "unknown"
-      (the artifacts API could not be queried), for accurate alarm wording.
-      Anything other than "fresh" means the pipeline that publishes the index
-      looks dead - health checks should treat that as a failure; callers
-      serving a user should keep going.'
+      '"fresh", "stale" (repeated artifact listings agreed there is no recent
+      publication) or "unknown" (the listings failed or disagreed). "stale"
+      means the pipeline that publishes the index looks dead. "unknown" means
+      the lookup cannot tell. Health checks should treat both as a failure;
+      callers serving a user should keep going.'
     value: ${{ steps.report.outputs.status }}
   prefix:
     description: >-
@@ -124,7 +124,8 @@ runs:
     # Runs even on a cache hit: its upload time is also the only honest "is the
     # nightly still running" signal, and selecting on the artifact rather than a
     # run's conclusion keeps an unrelated evaluate/feedback failure from hiding a
-    # perfectly good artifact.
+    # perfectly good artifact. A missing or stale result is cross-checked for up
+    # to 20 seconds before it counts as confirmed.
     - name: Find the newest usable index artifact
       id: artifact
       continue-on-error: true
@@ -132,6 +133,7 @@ runs:
       env:
         ARTIFACT: ${{ steps.cfg.outputs.artifact }}
         PRODUCER_WORKFLOW: ${{ steps.cfg.outputs.workflow }}
+        MAX_AGE_DAYS: ${{ inputs.max-age-days }}
       with:
         github-token: ${{ inputs.github-token }}
         script: |
@@ -166,7 +168,7 @@ runs:
         FROM_CACHE: ${{ steps.cached.outputs.ok }}
         ARTIFACT_RUN: ${{ steps.artifact.outputs.id }}
         ARTIFACT_CREATED: ${{ steps.artifact.outputs.created }}
-        SEARCHED: ${{ steps.artifact.outputs.searched }}
+        CONFIRMED: ${{ steps.artifact.outputs.confirmed }}
         LOOKUP: ${{ steps.artifact.outcome }}
         DOWNLOAD: ${{ steps.download.outcome }}
         MAX_AGE_DAYS: ${{ inputs.max-age-days }}
