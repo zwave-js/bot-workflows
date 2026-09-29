@@ -247,6 +247,11 @@ describe("restoreBotIndex", () => {
 			const wrap = (value, key) =>
 				value instanceof Error ? value : { [key]: value };
 			return {
+				// Serves one page, shaped like Octokit's normalized response
+				paginate: vi.fn(async (method, params, mapFn) => {
+					const response = await method(params);
+					return mapFn({ ...response, data: response.data.artifacts });
+				}),
 				rest: {
 					repos: { get: vi.fn() },
 					actions: {
@@ -411,6 +416,14 @@ describe("restoreBotIndex", () => {
 			).toBe("stale");
 		});
 
+		it("confirms when two of three attempts agree", async () => {
+			const github = fakeGithub({
+				timeBounded: [[run(5, 1)], [], [run(5, 1)]],
+			});
+			const { outputs } = await find(github);
+			expect(outputs).toEqual({ confirmed: "true" });
+		});
+
 		it("does not confirm when the listings disagree", async () => {
 			const github = fakeGithub({
 				timeBounded: [[run(5, 1)], [], [run(5, 1), run(6, 0)]],
@@ -494,6 +507,7 @@ describe("restoreBotIndex", () => {
 			expect(logged).toContain(`artifact 31 uploaded ${daysAgo(1)}`);
 			expect(logged).toMatch(/\[request runs-\d+\]/);
 			expect(logged).toMatch(/\[request run-artifacts-\d+\]/);
+			expect(logged).toMatch(/workflow ID 555 \[request workflow-\d+\]/);
 		});
 
 		it("refuses to run without a valid age limit", async () => {

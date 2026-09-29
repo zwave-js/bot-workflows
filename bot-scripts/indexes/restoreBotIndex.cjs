@@ -146,7 +146,8 @@ const MAX_PRODUCER_RUNS = 10;
 const CROSS_CHECK_DELAYS_MS = [0, 5_000, 15_000];
 
 // A missing or stale result counts as confirmed once this many cross-check
-// attempts answered with the same runs and artifacts
+// attempts answered with the same runs and artifacts. The other attempts may
+// differ.
 const MIN_AGREEING_ATTEMPTS = 2;
 
 // Each repo-wide artifact costs one extra request to verify its producing run
@@ -237,23 +238,23 @@ async function listProducerRuns(
  */
 async function firstUsableArtifact({ github, owner, repo, runs, branch, name }) {
 	for (const run of runs) {
-		const response = await github.rest.actions.listWorkflowRunArtifacts({
-			owner,
-			repo,
-			run_id: run.id,
-			per_page: 100,
-		});
-		const artifact = selectArtifact(
-			response.data?.artifacts ?? [],
-			branch,
-			name,
+		/** @type {string[]} */
+		const requestIds = [];
+		const artifacts = await github.paginate(
+			github.rest.actions.listWorkflowRunArtifacts,
+			{ owner, repo, run_id: run.id, per_page: 100 },
+			(/** @type {any} */ response) => {
+				requestIds.push(requestIdOf(response));
+				return response.data;
+			},
 		);
+		const artifact = selectArtifact(artifacts, branch, name);
 		console.log(
 			`  Run ${run.id}: ${
 				artifact
 					? `artifact ${artifact.id} uploaded ${artifact.created_at}`
 					: "no usable artifact"
-			} [request ${requestIdOf(response)}]`,
+			} [request ${requestIds.join(", ")}]`,
 		);
 		if (artifact) {
 			return {
@@ -437,11 +438,19 @@ async function findIndexArtifact(
 		for (const [attempt, delay] of CROSS_CHECK_DELAYS_MS.entries()) {
 			if (delay) await sleep(delay);
 			try {
-				producerId ??= (await github.rest.actions.getWorkflow({
-					owner,
-					repo,
-					workflow_id: producerWorkflow,
-				})).data.id;
+				if (producerId === undefined) {
+					const response = await github.rest.actions.getWorkflow({
+						owner,
+						repo,
+						workflow_id: producerWorkflow,
+					});
+					producerId = response.data.id;
+					console.log(
+						`${producerWorkflow} has workflow ID ${producerId} [request ${
+							requestIdOf(response)
+						}]`,
+					);
+				}
 				const result = await crossCheck({
 					github,
 					owner,
@@ -463,8 +472,12 @@ async function findIndexArtifact(
 		}
 
 		const fresh = !!best && isFresh(best.created, maxAgeDays, now);
-		const agreed = signatures.length >= MIN_AGREEING_ATTEMPTS
-			&& signatures.every((s) => s === signatures[0]);
+		/** @type {Map<string, number>} */
+		const counts = new Map();
+		for (const s of signatures) counts.set(s, (counts.get(s) ?? 0) + 1);
+		const agreed = [...counts.values()].some((n) =>
+			n >= MIN_AGREEING_ATTEMPTS
+		);
 		confirmed = fresh || agreed;
 		if (!confirmed) {
 			console.log(
