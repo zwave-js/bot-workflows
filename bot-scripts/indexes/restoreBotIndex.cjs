@@ -79,7 +79,7 @@ function computeStaleness({ artifactCreated, confirmed, maxAgeDays, now }) {
 		const createdMs = new Date(artifactCreated).getTime();
 		if (Number.isNaN(createdMs)) {
 			return {
-				status: "stale",
+				status: confirmed ? "stale" : "unknown",
 				ageDays: "",
 				warning:
 					`Unreadable upload timestamp for the index artifact ('${artifactCreated}')`,
@@ -238,13 +238,15 @@ async function listProducerRuns(
  */
 async function firstUsableArtifact({ github, owner, repo, runs, branch, name }) {
 	for (const run of runs) {
-		/** @type {string[]} */
-		const requestIds = [];
 		const artifacts = await github.paginate(
 			github.rest.actions.listWorkflowRunArtifacts,
 			{ owner, repo, run_id: run.id, per_page: 100 },
 			(/** @type {any} */ response) => {
-				requestIds.push(requestIdOf(response));
+				console.log(
+					`  Run ${run.id}: listed ${response.data.length} artifact(s) [request ${
+						requestIdOf(response)
+					}]`,
+				);
 				return response.data;
 			},
 		);
@@ -254,7 +256,7 @@ async function firstUsableArtifact({ github, owner, repo, runs, branch, name }) 
 				artifact
 					? `artifact ${artifact.id} uploaded ${artifact.created_at}`
 					: "no usable artifact"
-			} [request ${requestIds.join(", ")}]`,
+			}`,
 		);
 		if (artifact) {
 			return {

@@ -99,15 +99,18 @@ runs:
       run: |
         set -euo pipefail
 
-        # Word the problem line for one index. A missing or stale index is a
-        # confirmed problem. An unknown publication state is only uncertain.
+        # Word the problem line for one index. An unknown publication state is
+        # only uncertain. Any other status except fresh, including an omitted
+        # one, is a confirmed problem.
         confirmed_problem() {
           local label="$1" found="$2" status="$3" age="$4"
           if [ "$found" != "true" ]; then
             printf -- '- The %s index could not be restored, from cache or from artifacts.\n' "$label"
-          elif [ "$status" = "stale" ] && [ -n "$age" ]; then
+          elif [ "$status" = "fresh" ] || [ "$status" = "unknown" ]; then
+            return 0
+          elif [ -n "$age" ]; then
             printf -- '- The %s index is being served from a pipeline that last published %s day(s) ago.\n' "$label" "$age"
-          elif [ "$status" = "stale" ]; then
+          else
             printf -- '- The %s index is being served from a pipeline that has not published recently.\n' "$label"
           fi
         }

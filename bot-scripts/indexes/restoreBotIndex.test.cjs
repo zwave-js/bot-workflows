@@ -130,6 +130,16 @@ describe("restoreBotIndex", () => {
 			expect(r.warning).toMatch(/nightly rebuild may be failing/);
 		});
 
+		it("is unknown on an unreadable timestamp without confirmation", () => {
+			const r = computeStaleness({
+				artifactCreated: "not a date",
+				confirmed: false,
+				maxAgeDays: 3,
+				now,
+			});
+			expect(r.status).toBe("unknown");
+		});
+
 		it("is stale on an unreadable timestamp", () => {
 			const r = computeStaleness({
 				artifactCreated: "not a date",
