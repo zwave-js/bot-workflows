@@ -23,6 +23,8 @@ module.exports = {
 		require("./logfile/ensureFeedback.cjs").ensureLogfileFeedbackInDiscussion(
 			...args,
 		),
+	editChangedLogfile: (...args) =>
+		require("./logfile/editChangedLogfile.cjs")(...args),
 	extractLogfileUrlFromDiscussion: (...args) =>
 		require("./logfile/extractLogfileUrlFromDiscussion.cjs")(...args),
 	postClassifyIssueFeedback: (...args) =>

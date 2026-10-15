@@ -65,11 +65,25 @@ on:
 
           return feedback;
 
+    # Edits still refresh the feedback comment above, but only a changed
+    # logfile warrants another analysis
+    - name: Check whether the logfile changed
+      uses: actions/github-script@v9
+      id: changed
+      if: steps.feedback.outputs.result == 'OK'
+      with:
+        result-encoding: string
+        script: |
+          const bot = require(`${process.env.BOT_SCRIPTS_DIR}/index.cjs`);
+          const changed = bot.editChangedLogfile({context});
+          if (!changed) console.log("Skipping analysis: the edit did not change the logfile");
+          return changed ? "true" : "false";
+
     # The step outcome (success vs. skipped) is exposed as a pre-activation
     # output and gates the agent job below
     - name: Gate agentic analysis
       id: gate
-      if: steps.feedback.outputs.result == 'OK'
+      if: steps.feedback.outputs.result == 'OK' && steps.changed.outputs.result == 'true'
       run: "true"
   permissions:
     contents: read
