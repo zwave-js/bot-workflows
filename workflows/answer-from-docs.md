@@ -169,8 +169,8 @@ safe-outputs:
   timeout-minutes: 10
 
 imports:
-  - zwave-js/bot-workflows/workflows/shared/hardening.md@75148e07b701ca92e052212a9b7710864068ef6e
-  - zwave-js/bot-workflows/workflows/shared/docs-answer-judge.md@75148e07b701ca92e052212a9b7710864068ef6e
+  - zwave-js/bot-workflows/workflows/shared/hardening.md@6cc2957100d8ebbcf1c21d9233165642f2868d4d
+  - zwave-js/bot-workflows/workflows/shared/docs-answer-judge.md@6cc2957100d8ebbcf1c21d9233165642f2868d4d
 
 steps:
   - name: Download handoff
