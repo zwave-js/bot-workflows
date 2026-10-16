@@ -75,7 +75,7 @@ on:
         result-encoding: string
         script: |
           const bot = require(`${process.env.BOT_SCRIPTS_DIR}/index.cjs`);
-          const changed = bot.editChangedLogfile({context});
+          const changed = bot.logfileChangedByEdit({context});
           if (!changed) console.log("Skipping analysis: the edit did not change the logfile");
           return changed ? "true" : "false";
 

@@ -14,7 +14,7 @@ const SECTION_HEADER = "### Upload Logfile";
  * @param {{context: Context}} param
  * @returns {boolean}
  */
-function editChangedLogfile({ context }) {
+function logfileChangedByEdit({ context }) {
 	const { action, changes, discussion } = context.payload;
 	if (action !== "edited") return true;
 	// Title-only edits carry no previous body
@@ -26,4 +26,4 @@ function editChangedLogfile({ context }) {
 	return !!after && after !== before;
 }
 
-module.exports = editChangedLogfile;
+module.exports = logfileChangedByEdit;

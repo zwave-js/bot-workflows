@@ -1,7 +1,7 @@
 // @ts-check
 
 import { describe, expect, it } from "vitest";
-import editChangedLogfile from "./editChangedLogfile.cjs";
+import logfileChangedByEdit from "./logfileChangedByEdit.cjs";
 
 /**
  * @param {string} link
@@ -13,10 +13,10 @@ function body(link, extra = "") {
 
 /** @param {any} payload */
 function check(payload) {
-	return editChangedLogfile({ context: /** @type {any} */ ({ payload }) });
+	return logfileChangedByEdit({ context: /** @type {any} */ ({ payload }) });
 }
 
-describe("editChangedLogfile", () => {
+describe("logfileChangedByEdit", () => {
 	const url = "https://github.com/user-attachments/files/1/zwavejs.log";
 	const otherUrl = "https://github.com/user-attachments/files/2/zwavejs.log";
 
