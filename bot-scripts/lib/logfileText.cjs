@@ -47,6 +47,22 @@ function extractLogfileUrl(logfileSection) {
 }
 
 /**
+ * Returns the link or code block that provides the logfile in a post body, so
+ * two revisions of a post can be compared without downloading anything
+ * @param {string | undefined} body
+ * @param {string} sectionHeader
+ * @returns {string | undefined}
+ */
+function logfileReference(body, sectionHeader) {
+	if (!body?.includes(sectionHeader)) return;
+	const section = body.slice(
+		body.indexOf(sectionHeader) + sectionHeader.length,
+	);
+	return markdownLinkRegex.exec(section)?.[1]?.trim()
+		?? codeBlockRegex.exec(section)?.[1]?.trim();
+}
+
+/**
  * Detects zipped or gzipped logfile uploads by their magic bytes
  * @param {Uint8Array} data
  * @returns {"zip" | "gzip" | undefined}
@@ -279,6 +295,7 @@ async function extractLogfileContent(logfileSection) {
 }
 
 module.exports = {
+	logfileReference,
 	extractLogfileSection,
 	extractLogfileUrl,
 	extractLogfileContent,

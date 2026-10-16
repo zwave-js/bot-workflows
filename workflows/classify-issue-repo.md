@@ -72,6 +72,9 @@ safe-outputs:
     post-classification:
       description: "Report whether the issue belongs to the UI or the driver repository. Call exactly once."
       runs-on: ubuntu-latest
+      # Custom safe-output jobs only wait for threat detection, they are not
+      # gated on its verdict
+      if: needs.detection.result == 'success'
       output: "Classification recorded, feedback is posted separately."
       permissions:
         contents: read
