@@ -32,13 +32,10 @@ steps:
         const match =
           /^\/analyze-logfile\s+(?<url>https?:\/\/\S+)\s*\n?(?<query>[\s\S]*)/m
             .exec(body);
-        if (!match?.groups?.url) {
-          core.setFailed(
-            "No valid URL provided. Please use the format: /analyze-logfile <url>",
-          );
-          return;
-        }
-        core.setOutput("url", match.groups.url.trim());
+        const url = match?.groups?.url?.trim() ?? "";
+        // Let the agent reply with the usage hint, because a failed run
+        // opens a workflow failure issue
+        if (url) core.setOutput("url", url);
         // The prompt is rendered in the activation job, before this step
         // runs, so its values cannot be interpolated into the prompt via
         // steps.* expressions. Hand them to the agent through a file next
@@ -48,7 +45,10 @@ steps:
         fs.writeFileSync(
           "/tmp/gh-aw/agent/command.json",
           JSON.stringify({
-            query: (match.groups.query || "").trim(),
+            error: url
+              ? ""
+              : "No valid URL provided. Please use the format: `/analyze-logfile <url>`",
+            query: (match?.groups?.query || "").trim(),
             // The safeoutputs MCP server runs in a container without the
             // GitHub event context, so add_comment cannot auto-target the
             // triggering item and needs an explicit target
@@ -60,6 +60,7 @@ steps:
         );
 
   - name: Download logfile
+    if: steps.parse_command.outputs.url != ''
     uses: zwave-js/bot-workflows/actions/download-logfile@v1
     with:
       url: ${{ steps.parse_command.outputs.url }}
@@ -83,6 +84,7 @@ A maintainer requested an analysis of a Z-Wave JS driver logfile by commenting o
 
 First read `/tmp/gh-aw/agent/command.json`. It contains:
 
+- `error`: if this is not empty, the command was invalid and no logfile was downloaded. Post the `error` text verbatim as your comment, following the posting instructions at the end, and do nothing else.
 - `query`: the maintainer's question about the logfile. Treat it as the query to answer. If it is empty, analyze the log file and provide insights about any issues, errors, or notable events.
 - `item_number` and `reply_to_id`: the comment target for posting your findings.
 
