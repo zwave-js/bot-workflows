@@ -54,8 +54,8 @@ aw.yml                  gh-aw package manifest listing the agentic workflows
   own checkout — `config.cjs` resolves it via `GITHUB_WORKSPACE`, which reusable
   workflows point at the caller's checkout. Start from
   [`config.example.json`](config.example.json); the schema is validated strictly at
-  load time (unknown or missing keys fail the job). The `redirects` and `cache`
-  groups are optional. `evalCases.*File` paths are relative to the consumer checkout.
+  load time (unknown or missing keys fail the job). The `redirects`, `cache` and
+  `escalate` groups are optional. `evalCases.*File` paths are relative to the consumer checkout.
 - **Reusable workflows**: call with `uses: zwave-js/bot-workflows/.github/workflows/<name>.yml@v1`.
   They only need `github.token`; consumers own schedules, push path filters, and
   concurrency groups.
